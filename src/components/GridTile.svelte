@@ -58,7 +58,7 @@
           {title}
         </div>
         <div class="w-fit bg-black p-3 text-sm">
-          ${price}
+          {price}
           {currencyCode}
         </div>
       </div>

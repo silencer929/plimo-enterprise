@@ -14,9 +14,10 @@
   let {openCart}  = $props();
 
   let tabs = [
-    { name: 'All', path: '/search' },
+    { name: 'Products', path: '/search' },
     { name: 'Featured', path: '/search/featured' },
-    { name: 'Apparel', path: '/search/clothes' }
+    { name: 'About Us', path: '/about us' },
+    { name: 'Contact Us', path: '/contact us' }
   ];
   function onOpenCart() {
     showMenu = false;

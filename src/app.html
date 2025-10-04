@@ -2,15 +2,69 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="description"
-      content="High-performance ecommerce site built with SvelteKit and Shopify."
-    />
-    <link rel="icon" href="%sveltekit.assets%/shopping-bag.png" />
+
+    <!-- Primary meta -->
+    <title>Pleamore — Clothing & Branding</title>
+    <meta name="description" content="Pleamore — sustainable, thoughtfully designed clothing and branding. Timeless apparel, transparent supply chains, and exceptional quality." />
+    <meta name="keywords" content="Pleamore, clothing, sustainable fashion, branding, apparel, ethical fashion, shop" />
+    <meta name="author" content="Pleamore clothing and branding shop" />
+    <meta name="robots" content="index, follow" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f172a" />
+
+    <!-- Open Graph / Social preview -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pleamore" />
+    <meta property="og:title" content="Pleamore — Clothing & Branding" />
+    <meta property="og:description" content="Sustainable, thoughtfully designed clothing and branding. Shop timeless, durable apparel made with care." />
+    <!-- Replace /about-hero.jpg with your real preview image in static/ or a full URL -->
+    <meta property="og:image" content="%sveltekit.assets%/about-hero.jpg" />
+    <meta property="og:image:alt" content="Pleamore clothing — hero" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://your-domain.example/" />
+
+    <!-- Twitter card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Pleamore — Clothing & Branding" />
+    <meta name="twitter:description" content="Sustainable, thoughtfully designed clothing. Discover Pleamore's collections and mission." />
+    <meta name="twitter:image" content="%sveltekit.assets%/about-hero.jpg" />
+
+    <!-- Icons / manifest -->
+    <link rel="icon" href="%sveltekit.assets%/shopping-bag.png" />
+    <link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+    <link rel="manifest" href="%sveltekit.assets%/site.webmanifest" />
+
+    <!-- Performance: preload fonts & preconnect to Google Fonts (if used) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Example font: replace or remove if you use local fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+    <!-- Structured data: Organization (replace url/email/logo as needed) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Pleamore clothing and branding shop",
+      "url": "https://plimo-enterprise.netlify.app",
+      "logo": "%sveltekit.assets%/plimo-enterprise-shop-logo.png",
+      "contactPoint": [{
+        "@type": "ContactPoint",
+        "email": "poweldayck@gmail.com",
+        "contactType": "customer service"
+      }],
+      "sameAs": []
+    }
+    </script>
+
+    <!-- Default favicon fallback and MS tile color -->
+    <meta name="msapplication-TileColor" content="#0f172a" />
+
+    <!-- SvelteKit head (title/meta/placeholders inserted by routes) -->
     %sveltekit.head%
   </head>
-  <body class="bg-black">
+
+  <body class="bg-black text-white" style="font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
     <div id="svelte">%sveltekit.body%</div>
   </body>
 </html>

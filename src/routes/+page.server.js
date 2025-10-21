@@ -7,8 +7,9 @@ export async function load({ url }) {
 
   if (res.status === 200) {
     const products = res.body?.data?.collections?.edges;
+    const peter=null;
 
-    if (products && products.length > 0) {
+    if (peter!=null) {
       return { products };
     }
 

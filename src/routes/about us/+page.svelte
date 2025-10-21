@@ -18,22 +18,16 @@
   // team avatars (ui-avatars) — fine for placeholders
   const team = [
     {
-      name: 'Amina Mwangi',
+      name: 'Erick Plimo',
       role: 'Founder & CEO',
       bio: 'Design-driven founder focused on sustainable apparel.',
       avatar: `https://ui-avatars.com/api/?name=Amina+Mwangi&background=0f172a&color=ffffff&size=256`
     },
     {
-      name: 'James Otieno',
+      name: 'Peter Mbugua',
       role: 'Head of Operations',
-      bio: 'Keeps the supply chain nimble and ethical.',
+      bio: 'Keeps the supply chain nimble and ethical. contact: 0798614280',
       avatar: `https://ui-avatars.com/api/?name=James+Otieno&background=0f172a&color=ffffff&size=256`
-    },
-    {
-      name: 'Lina K.',
-      role: 'Creative Director',
-      bio: 'Leads product design and seasonal collections.',
-      avatar: `https://ui-avatars.com/api/?name=Lina+K&background=0f172a&color=ffffff&size=256`
     }
   ];
 </script>

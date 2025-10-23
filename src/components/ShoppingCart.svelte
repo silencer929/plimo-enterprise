@@ -1,54 +1,62 @@
 <script>
+  import { onMount, onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
   import Icons from './Icons.svelte';
 
-  /** @type {{
-    loading?: boolean,
-    items?: any[],
-    onAddProduct: (item: any) => void,
-    onRemoveProduct: (item: any, quantity: number, lineId: string) => void,
-    onClose: () => void
-  }} */
-  let { 
-    loading = $bindable(false), 
-    items = [], 
-    onAddProduct, 
-    onRemoveProduct, 
-    onClose 
-  } = $props();
+  /** props */
+  export let loading = false;
+  export let items = [];
+  export let onAddProduct;
+  export let onRemoveProduct;
+  export let onClose;
 
-  function addOneItem(item) {
-    loading = true;
-    onAddProduct(item.node.merchandise.id);
+  // currency formatter (adjust locale/currency as you need)
+  const formatter = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'KES',
+    minimumFractionDigits: 2
+  });
+
+  function safeGetImage(item) {
+    return item?.node?.merchandise?.product?.images?.edges?.[0]?.node?.originalSrc ?? '';
   }
 
-  function removeOneItem(item) {
+  async function addOneItem(item) {
     loading = true;
-    let quantity = item.node.quantity - 1;
-    onRemoveProduct(
-      item.node.merchandise.id,
-      quantity,
-      item.node.id
-    );
+    try {
+      await Promise.resolve(onAddProduct(item.node.merchandise.id));
+    } catch (err) {
+      console.error('addOneItem error', err);
+    } finally {
+      loading = false;
+    }
   }
 
-  function removeEntireItem(item) {
+  async function removeOneItem(item) {
     loading = true;
-    onRemoveProduct(
-      item.node.merchandise.id,
-      0,
-      item.node.id
-    );
+    const quantity = Math.max(0, (item.node.quantity ?? 1) - 1);
+    try {
+      await Promise.resolve(onRemoveProduct(item.node.merchandise.id, quantity, item.node.id));
+    } catch (err) {
+      console.error('removeOneItem error', err);
+    } finally {
+      loading = false;
+    }
   }
 
-  async function checkout() {
+  async function removeEntireItem(item) {
     loading = true;
-    let checkoutUrl = localStorage.getItem('cartUrl');
-    window.open(JSON.parse(checkoutUrl), '_blank');
-    loading = false;
+    try {
+      await Promise.resolve(onRemoveProduct(item.node.merchandise.id, 0, item.node.id));
+    } catch (err) {
+      console.error('removeEntireItem error', err);
+    } finally {
+      loading = false;
+    }
   }
 
   function closeCart() {
-    onClose();
+    if (typeof onClose === 'function') onClose();
   }
 
   function handleKeyDown(event) {
@@ -56,24 +64,85 @@
       closeCart();
     }
   }
+
+  // attach escape to window so it works regardless of focus
+  onMount(() => {
+    window.addEventListener('keydown', handleKeyDown);
+  });
+  onDestroy(() => {
+    window.removeEventListener('keydown', handleKeyDown);
+  });
+
+  // compute total
+  function computeTotal() {
+    return items.reduce((sum, it) => {
+      const amount = Number(it?.node?.estimatedCost?.totalAmount?.amount ?? 0);
+      const qty = Number(it?.node?.quantity ?? 1);
+      return sum + amount * qty;
+    }, 0);
+  }
+
+  function getCurrency() {
+    return items?.[0]?.node?.estimatedCost?.totalAmount?.currencyCode ?? 'KES';
+  }
+
+  /**
+   * Proceed to checkout:
+   * - prepare minimal cart payload
+   * - save to localStorage under "cartData"
+   * - navigate to /checkout with total & currency in query string
+   */
+  async function proceedToCheckout() {
+    loading = true;
+    try {
+      const total = computeTotal();
+      const currency = getCurrency();
+
+      const payloadItems = items.map((it) => ({
+        lineId: it.node.id,
+        productId: it.node.merchandise.id,
+        title: it.node.merchandise.product?.title ?? '',
+        variantTitle: it.node.merchandise?.title ?? '',
+        quantity: Number(it.node.quantity ?? 1),
+        unitPrice: Number(it?.node?.estimatedCost?.totalAmount?.amount ?? 0)
+      }));
+
+      const cartData = {
+        total: Number(total.toFixed(2)),
+        currency,
+        items: payloadItems
+      };
+
+      localStorage.setItem('cartData', JSON.stringify(cartData));
+
+      const url = `/checkout?total=${encodeURIComponent(cartData.total)}&currency=${encodeURIComponent(cartData.currency)}`;
+      // navigate in same tab; use window.open(url, '_blank') if you want a new tab
+      goto(url);
+    } catch (err) {
+      console.error('proceedToCheckout error', err);
+    } finally {
+      loading = false;
+    }
+  }
 </script>
 
 <div
   class="absolute inset-0 z-50 flex max-h-screen w-full justify-end overflow-hidden bg-black/50"
-  onclick={closeCart}
-  onkeydown={handleKeyDown}
+  on:click={closeCart}
   role="dialog"
   aria-label="Shopping Cart"
   tabindex="0"
 >
-  <div class="z-50 w-full bg-black p-6 md:w-1/2 lg:w-1/3 relative">
+  <div class="z-50 w-full bg-black p-6 md:w-1/2 lg:w-1/3 relative" on:click|stopPropagation>
     {#if loading}
       <div class="absolute inset-0 bg-black/50 z-50"></div>
     {/if}
+
     <div class="mb-6 flex w-full items-center justify-between">
       <div class="text-2xl font-medium">My Cart</div>
-      <button onclick={closeCart} class="text-sm uppercase opacity-80 hover:opacity-100">close</button>
+      <button on:click={closeCart} class="text-sm uppercase opacity-80 hover:opacity-100">close</button>
     </div>
+
     {#if items.length === 0}
       <div class="mt-20 flex w-full flex-col items-center justify-center overflow-hidden">
         <div class="flex h-16 w-16 items-center justify-center rounded-full bg-white">
@@ -82,15 +151,16 @@
         <div class="mt-6 text-center text-2xl font-bold">Your cart is empty.</div>
       </div>
     {/if}
+
     <div class="overflow-y-auto" style="height: 80%;">
-      {#each items as item, i (i)}
+      {#each items as item (item.node.id)}
         <div class="mb-2 flex w-full">
           <img
             alt={item.node.merchandise.product.title}
             decoding="async"
             loading="lazy"
             class="w-20 flex-none bg-white"
-            src={item.node.merchandise.product.images.edges[0].node.originalSrc}
+            src={safeGetImage(item)}
           />
           <div class="ml-4 flex w-full flex-col justify-between">
             <div class="flex w-full justify-between">
@@ -98,13 +168,20 @@
                 <p class="text-lg font-medium">{item.node.merchandise.product.title}</p>
                 <p class="text-sm">{item.node.merchandise.title}</p>
               </div>
-              <p class="font-medium">${item.node.estimatedCost.totalAmount.amount}</p>
+              <p class="font-medium">
+                {#if item.node.estimatedCost?.totalAmount?.amount != null}
+                  {formatter.format(Number(item.node.estimatedCost.totalAmount.amount))}
+                {:else}
+                  —
+                {/if}
+              </p>
             </div>
           </div>
         </div>
+
         <div class="mb-4 flex w-full">
           <button
-            onclick={() => removeEntireItem(item)}
+            on:click={() => removeEntireItem(item)}
             class="mr-2 flex h-8 w-8 items-center justify-center border border-white/40 bg-white/0 hover:bg-white/10"
             aria-label="Remove item"
           >
@@ -115,14 +192,14 @@
               {item.node.quantity}
             </div>
             <button
-              onclick={() => removeOneItem(item)}
+              on:click={() => removeOneItem(item)}
               class="ml-auto flex h-8 w-8 items-center justify-center border-l border-white/40 bg-white/0 hover:bg-white/10"
               aria-label="Decrease quantity"
             >
               <Icons type="minus" strokeColor="#fff" />
             </button>
             <button
-              onclick={() => addOneItem(item)}
+              on:click={() => addOneItem(item)}
               class="flex h-8 w-8 items-center justify-center border-l border-white/40 bg-white/0 hover:bg-white/10"
               aria-label="Increase quantity"
             >
@@ -132,10 +209,12 @@
         </div>
       {/each}
     </div>
+
     {#if items.length !== 0}
       <button
-        onclick={checkout}
+        on:click={proceedToCheckout}
         class="mt-6 flex w-full items-center justify-center bg-white p-3 text-sm font-medium uppercase text-black opacity-90 hover:opacity-100"
+        disabled={loading}
       >
         <span>Proceed to Checkout</span>
         {#if loading}

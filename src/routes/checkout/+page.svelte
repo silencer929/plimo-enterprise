@@ -86,7 +86,7 @@
         <span class="mr-3">Processing…</span>
         <div class="lds-ring"><div></div><div></div><div></div><div></div></div>
       {:else}
-        Pay with M-Pesa
+        Pay Now
       {/if}
     </button>
 

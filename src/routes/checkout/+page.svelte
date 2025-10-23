@@ -1,104 +1,111 @@
-<script lang="ts">
+<script>
   import { onMount } from 'svelte';
-//   import { page } from '$app/stores';
-  import { get } from 'svelte/store';
+  import { page } from '$app/stores';
 
-  let total = 5000.0; // replace with real total (or use data from load())
+  let total = 0;
   let currency = 'KES';
-  let phone = '';
-  let loading = false;
-  let error = '';
+  let formattedTotal = '0.00';
+  let items = []; // optional: read items from localStorage fallback
 
-  onMount(() => {
-    // If you use load() to pass total: const data = get(page).data; total = data.total;
-  });
+  // safe parse for query param amounts (accepts "123.45" or "123")
+  function parseAmount(val) {
+    if (!val) return 0;
+    const n = Number(String(val).replace(/[, ]+/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  }
 
-  async function payWithMpesa() {
-    error = '';
-    if (!phone || phone.length < 6) {
-      error = 'Please enter a valid phone number.';
-      return;
-    }
-
-    loading = true;
+  function formatAmount(value, curr) {
     try {
-      const resp = await fetch('/dpo/create-transaction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Number(total).toFixed(2),
-          currency,
-          phone,
-          description: `Order payment - ${new Date().toISOString()}`
-        })
-      });
-
-      if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`Server error: ${resp.status} - ${text}`);
-      }
-
-      const payload = await resp.json();
-      if (!payload?.paymentUrl) throw new Error('Payment URL not returned by server.');
-
-      window.open(payload.paymentUrl, '_blank');
-    } catch (err: any) {
-      console.error(err);
-      error = err?.message ?? String(err);
-    } finally {
-      loading = false;
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: curr, minimumFractionDigits: 2 }).format(Number(value));
+    } catch (e) {
+      return (Number(value) || 0).toFixed(2);
     }
   }
+
+  function loadCartFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem('cartData');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.items)) return parsed;
+    } catch (e) {
+      // ignore parse errors
+    }
+    return null;
+  }
+
+  onMount(() => {
+    // 1) Try query params first
+    const qs = get(page).url.searchParams;
+    const qTotal = qs.get('total');
+    const qCurrency = qs.get('currency');
+
+    if (qTotal) {
+      total = parseAmount(qTotal);
+      currency = qCurrency ?? currency;
+    } else {
+      // 2) Fallback: read cartData from localStorage if present
+      const cart = loadCartFromLocalStorage();
+      if (cart) {
+        // prefer computing from items if available
+        if (Array.isArray(cart.items) && cart.items.length) {
+          items = cart.items.map(i => ({ ...i, quantity: Number(i.quantity || 0), unitPrice: Number(i.unitPrice || 0) }));
+          total = items.reduce((s, it) => s + (it.unitPrice || 0) * (it.quantity || 0), 0);
+        } else if (cart.total != null) {
+          total = Number(cart.total) || 0;
+        }
+        currency = cart.currency ?? currency;
+      } else {
+        // nothing: leave defaults or try to get from server-rendered data
+        total = 0;
+      }
+    }
+
+    formattedTotal = formatAmount(total, currency);
+  });
+
+  // If you prefer reactive formatting:
+  $: formattedTotal = formatAmount(total, currency);
+
+  // helper because we're using page store in onMount
+  import { get } from 'svelte/store';
 </script>
 
-<section class="checkout-panel p-6 bg-black text-white min-h-screen">
-  <div class="max-w-md mx-auto">
-    <h1 class="text-2xl mb-4">Proceed to Checkout</h1>
+<section class="checkout">
+  <h1>Checkout</h1>
 
-    <div class="bg-[rgba(255,255,255,0.03)] p-4 rounded mb-4">
-      <div class="flex justify-between items-center">
-        <div>
-          <div class="text-sm opacity-70">Total</div>
-          <div class="text-xl font-semibold">{currency} {Number(total).toFixed(2)}</div>
-        </div>
-        <img src="/logo.png" alt="logo" class="w-12 h-12 object-contain" />
-      </div>
-    </div>
-
-    <label class="block mb-2 text-sm opacity-80" for="">Phone (for M-Pesa STK)</label>
-    <input
-      class="w-full p-2 mb-4 bg-black border border-white/10 rounded"
-      inputmode="tel"
-      placeholder="+2547XXXXXXXX"
-      bind:value={phone}
-    />
-
-    {#if error}
-      <div class="mb-3 text-red-400 text-sm">{error}</div>
-    {/if}
-
-    <button
-      class="w-full py-3 uppercase font-medium bg-white text-black rounded flex items-center justify-center"
-      on:click={payWithMpesa}
-      disabled={loading}
-    >
-      {#if loading}
-        <span class="mr-3">Processing…</span>
-        <div class="lds-ring"><div></div><div></div><div></div><div></div></div>
-      {:else}
-        Pay Now
-      {/if}
-    </button>
-
-    <div class="mt-6 text-xs opacity-60">
-      Paying will open DPO’s secure page where the customer can choose M-Pesa. Use sandbox/test credentials first.
-    </div>
+  <div class="summary">
+    <div>Total: <strong>{formattedTotal}</strong></div>
+    <div class="small">Currency: {currency}</div>
   </div>
+
+  {#if items.length}
+    <ul>
+      {#each items as it}
+        <li>{it.title} — {it.variantTitle} × {it.quantity} @ {formatAmount(it.unitPrice, currency)}</li>
+      {/each}
+    </ul>
+  {/if}
+
+  <!-- Example: send to server using computed total -->
+  <button on:click={async () => {
+    // replace phone with actual collected phone
+    const resp = await fetch('/dpo/create-transaction', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ amount: total.toFixed(2), currency, phone: '', description: 'Order payment' })
+    });
+    const json = await resp.json();
+    console.log(json);
+    if (json?.paymentUrl) window.open(json.paymentUrl, '_blank');
+  }}>
+    Pay {formattedTotal}
+  </button>
 </section>
 
 <style>
-  .lds-ring { display:inline-block; position:relative; width:18px; height:18px; }
-  .lds-ring div { box-sizing:border-box; display:block; position:absolute; width:14px; height:14px; margin:2px; border:2px solid #000; border-radius:50%; animation: lds-ring 1.2s cubic-bezier(.5,0,.5,1) infinite; border-color:#000 transparent transparent transparent; }
-  .lds-ring div:nth-child(1){ animation-delay:-0.45s; } .lds-ring div:nth-child(2){ animation-delay:-0.3s;} .lds-ring div:nth-child(3){ animation-delay:-0.15s;}
-  @keyframes lds-ring { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
+  .checkout { padding: 1rem; color: #fff; background: #000; min-height: 60vh; }
+  .summary { margin: 1rem 0; }
+  .small { opacity: 0.7; font-size: .9rem; }
+  button { background: #fff; color: #000; padding: .6rem 1rem; border: none; cursor: pointer; }
 </style>

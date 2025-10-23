@@ -20,12 +20,7 @@
   const countries = [
     { code: 'KE', name: 'Kenya', dial: '+254', flag: '🇰🇪', example: '712345678' },
     { code: 'TZ', name: 'Tanzania', dial: '+255', flag: '🇹🇿', example: '712345678' },
-    { code: 'UG', name: 'Uganda', dial: '+256', flag: '🇺🇬', example: '712345678' },
-    { code: 'RW', name: 'Rwanda', dial: '+250', flag: '🇷🇼', example: '712345678' },
-    { code: 'ZA', name: 'South Africa', dial: '+27', flag: '🇿🇦', example: '712345678' },
-    { code: 'NG', name: 'Nigeria', dial: '+234', flag: '🇳🇬', example: '8123456789' },
-    { code: 'GB', name: 'United Kingdom', dial: '+44', flag: '🇬🇧', example: '7123456789' },
-    { code: 'US', name: 'United States', dial: '+1', flag: '🇺🇸', example: '5551234567' }
+    { code: 'UG', name: 'Uganda', dial: '+256', flag: '🇺🇬', example: '712345678' }
   ];
 
   // read cartData from localStorage (fallback to query params)

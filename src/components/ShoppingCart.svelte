@@ -5,26 +5,179 @@
 
   /** props */
   export let loading = false;
-  export let items = [];
+  export let items = []; // may be either GraphQL shape (item.node...) or minimal stored shape
   export let onAddProduct;
   export let onRemoveProduct;
   export let onClose;
 
+  // internal normalized items used by the UI (GraphQL-like shape expected by this component)
+  let normalized = [];
+
+  // currency used across the cart
+  let currency = 'KES';
+
   // currency formatter (adjust locale/currency as you need)
-  const formatter = new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'KES',
-    minimumFractionDigits: 2
-  });
+  function makeFormatter(c) {
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: c,
+        minimumFractionDigits: 2
+      });
+    } catch (e) {
+      return { format: (v) => (Number(v) || 0).toFixed(2) };
+    }
+  }
+  let formatter = makeFormatter(currency);
 
   function safeGetImage(item) {
     return item?.node?.merchandise?.product?.images?.edges?.[0]?.node?.originalSrc ?? '';
   }
 
+  // Convert stored minimal payload items back into the GraphQL-like shape this UI expects
+  function normalizeStoredItems(storedItems = [], storedCurrency = 'KES') {
+    return storedItems.map((it) => {
+      return {
+        node: {
+          id: it.lineId ?? `line-${it.productId}-${Math.random().toString(36).slice(2,8)}`,
+          quantity: Number(it.quantity ?? 1),
+          merchandise: {
+            id: it.productId ?? null,
+            title: it.variantTitle ?? '',
+            product: {
+              title: it.title ?? '',
+              images: {
+                edges: [
+                  { node: { originalSrc: it.image ?? '' } }
+                ]
+              }
+            }
+          },
+          estimatedCost: {
+            totalAmount: {
+              amount: Number(it.unitPrice ?? 0).toFixed(2),
+              currencyCode: storedCurrency
+            }
+          }
+        }
+      };
+    });
+  }
+
+  // If incoming `items` are already GraphQL-like, we keep them. If they look like stored minimal items (no .node), we normalize.
+  function normalizeIncomingItems(rawItems) {
+    if (!Array.isArray(rawItems)) return [];
+    // detect GraphQL shape by checking for node property
+    const isGraphQL = rawItems.length > 0 && rawItems[0]?.node !== undefined;
+    if (isGraphQL) return rawItems;
+    // else assume minimal shape stored earlier
+    return normalizeStoredItems(rawItems, currency);
+  }
+
+  // compute total in cents to avoid floating-point rounding issues
+  function computeTotalFromItems(arr) {
+    let centsSum = 0;
+    for (const it of arr) {
+      // support GraphQL-like shape
+      const node = it?.node ?? it;
+      let qty = Number(node?.quantity ?? node?.quantity ?? 0);
+      // unit price can be at node.estimatedCost.totalAmount.amount or node.unitPrice
+      let unit = Number(node?.estimatedCost?.totalAmount?.amount ?? node?.unitPrice ?? 0);
+      if (isNaN(qty)) qty = 0;
+      if (isNaN(unit)) unit = 0;
+      const unitCents = Math.round(unit * 100);
+      centsSum += unitCents * qty;
+    }
+    return centsSum / 100;
+  }
+
+  // convert current normalized items back into the minimal payload we store in localStorage
+  function minimalPayloadFromNormalized(arr) {
+    return arr.map((it) => {
+      const node = it.node;
+      return {
+        lineId: node?.id ?? null,
+        productId: node?.merchandise?.id ?? null,
+        title: node?.merchandise?.product?.title ?? '',
+        variantTitle: node?.merchandise?.title ?? '',
+        quantity: Number(node?.quantity ?? 0),
+        unitPrice: Number(node?.estimatedCost?.totalAmount?.amount ?? 0),
+        image: node?.merchandise?.product?.images?.edges?.[0]?.node?.originalSrc ?? ''
+      };
+    });
+  }
+
+  function loadCartFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem('cartData');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed) return null;
+      return parsed;
+    } catch (e) {
+      console.warn('Invalid cartData in localStorage', e);
+      return null;
+    }
+  }
+
+  function updateLocalStorageFromNormalized() {
+    try {
+      const payloadItems = minimalPayloadFromNormalized(normalized);
+      const totalVal = computeTotalFromItems(normalized);
+      const cartData = {
+        total: Number(totalVal.toFixed(2)),
+        currency,
+        items: payloadItems
+      };
+      localStorage.setItem('cartData', JSON.stringify(cartData));
+    } catch (e) {
+      console.error('Failed to update cartData in localStorage', e);
+    }
+  }
+
+  // ensure normalized is kept in sync whenever parent passes new items prop
+  $: if (items && items.length) {
+    // don't overwrite a normalized state that came from localStorage if that is authoritative;
+    // but if items look like GraphQL shape and localStorage is absent, use items.
+    const ls = loadCartFromLocalStorage();
+    if (!ls) {
+      normalized = normalizeIncomingItems(items);
+      currency = normalized[0]?.node?.estimatedCost?.totalAmount?.currencyCode ?? currency;
+      formatter = makeFormatter(currency);
+    }
+  }
+
+  // On mount: if localStorage has cartData, use it to populate normalized and override incoming items.
+  onMount(() => {
+    const cart = loadCartFromLocalStorage();
+    if (cart && Array.isArray(cart.items) && cart.items.length) {
+      currency = cart.currency ?? currency;
+      formatter = makeFormatter(currency);
+      normalized = normalizeStoredItems(cart.items, currency);
+    } else {
+      // fallback: normalize whatever items prop provided (if any)
+      normalized = normalizeIncomingItems(items);
+      currency = normalized[0]?.node?.estimatedCost?.totalAmount?.currencyCode ?? currency;
+      formatter = makeFormatter(currency);
+    }
+    // keep escape handler
+    window.addEventListener('keydown', handleKeyDown);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener('keydown', handleKeyDown);
+  });
+
   async function addOneItem(item) {
     loading = true;
     try {
       await Promise.resolve(onAddProduct(item.node.merchandise.id));
+      // optimistic local update: increment quantity in normalized and save
+      const idx = normalized.findIndex(n => n.node.id === item.node.id);
+      if (idx !== -1) {
+        normalized[idx].node.quantity = Number(normalized[idx].node.quantity ?? 0) + 1;
+        updateLocalStorageFromNormalized();
+      }
     } catch (err) {
       console.error('addOneItem error', err);
     } finally {
@@ -34,9 +187,18 @@
 
   async function removeOneItem(item) {
     loading = true;
-    const quantity = Math.max(0, (item.node.quantity ?? 1) - 1);
     try {
+      const quantity = Math.max(0, (item.node.quantity ?? 1) - 1);
       await Promise.resolve(onRemoveProduct(item.node.merchandise.id, quantity, item.node.id));
+      // optimistic local update
+      const idx = normalized.findIndex(n => n.node.id === item.node.id);
+      if (idx !== -1) {
+        normalized[idx].node.quantity = quantity;
+        if (normalized[idx].node.quantity <= 0) {
+          normalized.splice(idx, 1);
+        }
+        updateLocalStorageFromNormalized();
+      }
     } catch (err) {
       console.error('removeOneItem error', err);
     } finally {
@@ -48,6 +210,12 @@
     loading = true;
     try {
       await Promise.resolve(onRemoveProduct(item.node.merchandise.id, 0, item.node.id));
+      // optimistic local update: remove line
+      const idx = normalized.findIndex(n => n.node.id === item.node.id);
+      if (idx !== -1) {
+        normalized.splice(idx, 1);
+        updateLocalStorageFromNormalized();
+      }
     } catch (err) {
       console.error('removeEntireItem error', err);
     } finally {
@@ -65,58 +233,26 @@
     }
   }
 
-  // attach escape to window so it works regardless of focus
-  onMount(() => {
-    window.addEventListener('keydown', handleKeyDown);
-  });
-  onDestroy(() => {
-    window.removeEventListener('keydown', handleKeyDown);
-  });
+  // compute total reactively from normalized items
+  $: total = computeTotalFromItems(normalized);
+  $: formattedTotal = formatter.format(total);
 
-  // compute total
-  function computeTotal() {
-    return items.reduce((sum, it) => {
-      const amount = Number(it?.node?.estimatedCost?.totalAmount?.amount ?? 0);
-      const qty = Number(it?.node?.quantity ?? 1);
-      return sum + amount * qty;
-    }, 0);
-  }
-
+  // get currency code used
   function getCurrency() {
-    return items?.[0]?.node?.estimatedCost?.totalAmount?.currencyCode ?? 'KES';
+    return currency;
   }
 
   /**
    * Proceed to checkout:
-   * - prepare minimal cart payload
-   * - save to localStorage under "cartData"
+   * - save current normalized minimal payload to localStorage under "cartData"
    * - navigate to /checkout with total & currency in query string
    */
   async function proceedToCheckout() {
     loading = true;
     try {
-      const total = computeTotal();
-      const currency = getCurrency();
-
-      const payloadItems = items.map((it) => ({
-        lineId: it.node.id,
-        productId: it.node.merchandise.id,
-        title: it.node.merchandise.product?.title ?? '',
-        variantTitle: it.node.merchandise?.title ?? '',
-        quantity: Number(it.node.quantity ?? 1),
-        unitPrice: Number(it?.node?.estimatedCost?.totalAmount?.amount ?? 0)
-      }));
-
-      const cartData = {
-        total: Number(total.toFixed(2)),
-        currency,
-        items: payloadItems
-      };
-
-      localStorage.setItem('cartData', JSON.stringify(cartData));
-
-      const url = `/checkout?total=${encodeURIComponent(cartData.total)}&currency=${encodeURIComponent(cartData.currency)}`;
-      // navigate in same tab; use window.open(url, '_blank') if you want a new tab
+      updateLocalStorageFromNormalized();
+      const cartData = loadCartFromLocalStorage();
+      const url = `/checkout?total=${encodeURIComponent(cartData?.total ?? total.toFixed(2))}&currency=${encodeURIComponent(cartData?.currency ?? getCurrency())}`;
       goto(url);
     } catch (err) {
       console.error('proceedToCheckout error', err);
@@ -143,7 +279,7 @@
       <button on:click={closeCart} class="text-sm uppercase opacity-80 hover:opacity-100">close</button>
     </div>
 
-    {#if items.length === 0}
+    {#if normalized.length === 0}
       <div class="mt-20 flex w-full flex-col items-center justify-center overflow-hidden">
         <div class="flex h-16 w-16 items-center justify-center rounded-full bg-white">
           <Icons type="cart" strokeColor="#000" />
@@ -152,8 +288,8 @@
       </div>
     {/if}
 
-    <div class="overflow-y-auto" style="height: 80%;">
-      {#each items as item (item.node.id)}
+    <div class="overflow-y-auto" style="height: 70%;">
+      {#each normalized as item (item.node.id)}
         <div class="mb-2 flex w-full">
           <img
             alt={item.node.merchandise.product.title}
@@ -210,7 +346,9 @@
       {/each}
     </div>
 
-    {#if items.length !== 0}
+    {#if normalized.length !== 0}
+      <div class="mt-4 text-right text-sm opacity-80">Subtotal: <strong>{formattedTotal}</strong></div>
+
       <button
         on:click={proceedToCheckout}
         class="mt-6 flex w-full items-center justify-center bg-white p-3 text-sm font-medium uppercase text-black opacity-90 hover:opacity-100"
